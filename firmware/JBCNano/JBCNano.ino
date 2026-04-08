@@ -42,15 +42,26 @@
 #define TFT_DC              12
 #define SCK                 13
 
+/* CONFIG DEFINES */
 #define ADC_REF_VOLTAGE     5
 #define ADC_NUM_COUNTS      1023
 #define ADC_NUM_BITS        10
 
 #define BUZZER_FREQ_LO      2000
-#define BUZZER_FREQ__HI     3000
+#define BUZZER_FREQ_HI      3000
 #define HEATER_FREQ         20000
 
 #define SERIAL_BAUD         115200
+
+#define TC_CONV_FACTOR      100
+#define IMON_GAIN           63.83f
+
+#define C115_MAX_POWER      25
+#define C210_MAX_POWER      65
+#define C245_MAX_POWER      100
+#define C115_RESISTANCE     3.4f
+#define C210_RESISTANCE     3.4f
+#define C245_RESISTANCE     3.4f
 
 
 /* Global fields */
@@ -97,12 +108,42 @@ float get_vmon() {
 }
 
 /**
- * @brief Get the iron tip thermocouple temperature in degrees C. HEATER_HI turned OFF during this function for accuracy.
+ * @brief Get the temperature reading in degrees C from MCP9700T-E/TT
  * 
+ * @return float 
+ */
+float get_tmon() {
+  return ( ADC_REF_VOLTAGE*(analogRead(TMON)/(float)ADC_NUM_COUNTS) - 0.5) * 100;
+}
+
+/**
+ * @brief Get the current reading in Amps across the shunt resistor.
+ * 
+ * @return float 
+ */
+float get_imon() {
+  return 0;
+}
+
+/**
+ * @brief Get the iron tip thermocouple temperature in degrees C. HEATER_HI turned OFF during this function for accuracy.
+ * @note  Consider implementing oversampling instead.
  * @return int 
  */
 int get_tc() {
-  return 0;
+  /* Disable and save HEATER_HI duty cycle */
+  uint16_t duty = OCR1A;
+  OCR1A = 0;
+  /* Average over 1ms, default analogRead~100us */
+  uint16_t avg = 0;
+  for (int i=0; i<10; i++) {
+    avg += analogRead(TC);
+  }
+  avg = avg / 10;
+  /* Restore HEATER_HI duty cycle */
+  OCR1A = duty;
+  /* Compute temperature in degrees C + Cold Junction Compensation */
+  return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
 }
 
 /**
@@ -112,15 +153,6 @@ int get_tc() {
  */
 int get_pwr_acc() {
   return map(analogRead(SET_PWR_ACC), 0, ADC_NUM_COUNTS, 0, 100);
-}
-
-/**
- * @brief Get the temperature reading in degrees C from MCP9700T-E/TT
- * 
- * @return float 
- */
-float get_tmon() {
-  return ( ADC_REF_VOLTAGE*(analogRead(TMON)/(float)ADC_NUM_COUNTS) - 0.5) / 0.01;
 }
 
 /**
