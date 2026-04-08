@@ -46,7 +46,8 @@
 #define ADC_NUM_COUNTS      1023
 #define ADC_NUM_BITS        10
 
-#define BUZZER_FREQ         2000
+#define BUZZER_FREQ_LO      2000
+#define BUZZER_FREQ__HI     3000
 #define HEATER_FREQ         20000
 
 #define SERIAL_BAUD         115200
@@ -55,6 +56,8 @@
 /* Global fields */
 volatile int set_pwr_heater = 0;
 volatile int set_pwr_acc    = 0;
+
+typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
@@ -94,7 +97,7 @@ float get_vmon() {
 }
 
 /**
- * @brief Get the iron tip thermocouple temperature in degrees C
+ * @brief Get the iron tip thermocouple temperature in degrees C. HEATER_HI turned OFF during this function for accuracy.
  * 
  * @return int 
  */
@@ -140,11 +143,37 @@ int get_pwr_heater() {
 }
 
 /**
- * @brief Simply beep the buzzer briefly for audio feedback.
+ * @brief Handle type detection logic based on handle sense 1/2 inputs.
+ *        Cannot distinguish if handle is actually installed or not due to input pullups for C245 case.
+ * 
+ * @return eCartridgeT 
+ */
+eCartridgeT detect_handle_type() {
+  /* Read handle sense inputs (active low) and return handle type */
+  bool hs1 = !digitalRead(HANDLE_SENSE_1_IN);
+  bool hs2 = !digitalRead(HANDLE_SENSE_2_IN);
+
+  if (hs1 & hs2) {
+    return NONE;
+  } else if (!hs1 & !hs2) {
+    return C245;
+  } else if (hs1) {
+    return C210;
+  } else if (hs2) {
+    return C115;
+  }
+}
+
+/**
+ * @brief Simply beep the buzzer briefly in 2 possible tones for audio feedback.
  * 
  */
-void beep() {
-  tone(BUZZER, BUZZER_FREQ, 150);
+void beep(bool freq_type) {
+  if (freq_type) {
+    tone(BUZZER, BUZZER_FREQ_HI, 150);
+  } else {
+    tone(BUZZER, BUZZER_FREQ_LO, 150);
+  }
 }
 
 void setup() {
@@ -188,8 +217,10 @@ void setup() {
   tft.setCursor(0, 0);
   tft.print("JBC NANO");
   
-  /* Allow for system settling time */
-  delay(1000);
+  /* Allow for system settling time delay */
+  beep(0);
+  delay(200);
+  beep(1);
 
   /* Enable ISR after setup*/
   interrupts();
@@ -198,12 +229,12 @@ void setup() {
 void loop() {
 
 
-  /* Overtemperature lockout for tip and tmon (requires reset to escape) */
+  /* Overtemperature lockout for tip and tmon */
   if (get_tmon() > 40 || get_tc() > 475) {
-    /* Disable pwm outputs to mosfets and beep buzzer */
+    /* Disable pwm outputs to mosfets and play buzzer */
     digitalWrite(HEATER_LO, 0);
     digitalWrite(HEATER_HI, 0);
-    tone(BUZZER, BUZZER_FREQ);
+    tone(BUZZER, BUZZER_FREQ_LO);
     while(1);
   }
 
