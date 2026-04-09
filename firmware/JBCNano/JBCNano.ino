@@ -55,14 +55,30 @@
 #define TC_CONV_FACTOR      100
 #define IMON_CONV_FACTOR    1.57f
 
-#define C115_MAX_POWER      25
-#define C210_MAX_POWER      65
-#define C245_MAX_POWER      100
-#define C115_RESISTANCE     3.4f
-#define C210_RESISTANCE     3.4f
-#define C245_RESISTANCE     3.4f
-
 #define VDD_MINIMUM         10
+
+/* CARTRIDGE DEFINES */
+#define KP_C115 					5
+#define KI_C115 					2
+#define KD_C115 					0.3
+#define MAX_I_C115 				300
+#define MAX_POWER_C115    25
+#define RESISTANCE_C115   3.4f
+
+#define KP_C210 					7
+#define KI_C210 					4
+#define KD_C210 					0.3
+#define MAX_I_C210 			  300
+#define MAX_POWER_C210    65
+#define RESISTANCE_C210   3.4f
+
+#define KP_C245 					8
+#define KI_C245 					2
+#define KD_C245 					0.5
+#define MAX_I_C245 				300
+#define MAX_POWER_C245    100
+#define RESISTANCE_C245   3.4f
+
 
 /* #define DEBUG */
 
