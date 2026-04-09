@@ -53,7 +53,7 @@
 #define SERIAL_BAUD         115200
 
 #define TC_CONV_FACTOR      100
-#define IMON_GAIN           63.83f
+#define IMON_CONV_FACTOR    1.57f
 
 #define C115_MAX_POWER      25
 #define C210_MAX_POWER      65
@@ -62,10 +62,14 @@
 #define C210_RESISTANCE     3.4f
 #define C245_RESISTANCE     3.4f
 
+#define VDD_MINIMUM         10
+
 
 /* Global fields */
 volatile int set_pwr_heater = 0;
 volatile int set_pwr_acc    = 0;
+
+bool uvlo = 0;
 
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
@@ -80,7 +84,7 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
  */
 void set_pwr_heater_en_isr() {
   set_pwr_heater = 0;
-  digitalWrite(HEATER_HI, 0);
+  OCR1A = 0;
   return;
 }
 
@@ -90,7 +94,7 @@ void set_pwr_heater_en_isr() {
  */
 void set_pwr_acc_en_isr() {
   set_pwr_acc = 0;
-  digitalWrite(HEATER_LO, 0);
+  OCR0A = 0;
   return;
 }
 
@@ -117,11 +121,18 @@ float get_tmon() {
 
 /**
  * @brief Get the current reading in Amps across the shunt resistor.
- * 
+ * @note  Consider implementing oversampling instead.
  * @return float 
  */
 float get_imon() {
-  return 0;
+  /* Average over 1ms, default analogRead~100us */
+  uint16_t avg = 0;
+  for (int i=0; i<10; i++) {
+    avg += analogRead(IMON);
+  }
+  /* Compute current in Amps */
+  avg = avg / 10;
+  return (ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * IMON_CONV_FACTOR;
 }
 
 /**
@@ -130,18 +141,19 @@ float get_imon() {
  * @return int 
  */
 int get_tc() {
-  /* Disable and save HEATER_HI duty cycle */
+  /* Disable and save HEATER_HI duty cycle, wait 0.5ms for TC to stabilize */
+  uint16_t avg = 0;
   uint16_t duty = OCR1A;
   OCR1A = 0;
+  delayMicroseconds(500);
   /* Average over 1ms, default analogRead~100us */
-  uint16_t avg = 0;
   for (int i=0; i<10; i++) {
     avg += analogRead(TC);
   }
-  avg = avg / 10;
   /* Restore HEATER_HI duty cycle */
   OCR1A = duty;
   /* Compute temperature in degrees C + Cold Junction Compensation */
+  avg = avg / 10;
   return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
 }
 
@@ -259,6 +271,13 @@ void setup() {
 
 void loop() {
 
+  /* UVLO */
+  if (get_vmon() < VDD_MINIMUM) {
+    /* Disable pwm outputs to protect mosfet gate driver */
+    digitalWrite(HEATER_LO, 0);
+    digitalWrite(HEATER_HI, 0);
+    uvlo = 1;
+  }
 
   /* Overtemperature lockout for tip and tmon */
   if (get_tmon() > 40 || get_tc() > 475) {
