@@ -64,10 +64,12 @@
 
 #define VDD_MINIMUM         10
 
+/* #define DEBUG */
+
 
 /* Global fields */
-volatile int set_pwr_heater = 0;
-volatile int set_pwr_acc    = 0;
+volatile bool set_pwr_heater_en = 0;
+volatile bool set_pwr_acc_en    = 0;
 
 bool uvlo = 0;
 
@@ -83,7 +85,7 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
  * 
  */
 void set_pwr_heater_en_isr() {
-  set_pwr_heater = 0;
+  set_pwr_heater_en = 0;
   OCR1A = 0;
   return;
 }
@@ -93,8 +95,8 @@ void set_pwr_heater_en_isr() {
  * 
  */
 void set_pwr_acc_en_isr() {
-  set_pwr_acc = 0;
-  OCR0A = 0;
+  set_pwr_acc_en = 0;
+  analogWrite(HEATER_LO, 0);
   return;
 }
 
@@ -219,6 +221,65 @@ void beep(bool freq_type) {
   }
 }
 
+/**
+ * @brief Update the TFT display with specific sensor data
+ * 
+ * @param set_temp 
+ * @param actual_temp 
+ * @param set_pwr_heater 
+ * @param set_pwr_acc 
+ * @param vmon 
+ * @param tmon 
+ * @param imon 
+ */
+void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon) {
+  /* Update display with specific sensor data */
+  tft.fillScreen(ST77XX_BLACK);
+  tft.setCursor(0, 0);
+
+  tft.print("Actual Temp: ");
+  tft.print(actual_temp);
+  tft.println(" C");
+
+  tft.print("Set Temp: ");
+  tft.print(set_temp);
+  tft.println(" C");
+  tft.println();
+
+
+
+  tft.print("Set Power Heater: ");
+  tft.print(set_pwr_heater);
+  tft.println(" W");
+
+  tft.print("Set Power Acc.: ");
+  tft.print(set_pwr_acc);
+  tft.println(" W");
+
+  tft.print("Heater & Acc. Power: ");
+  tft.print(vmon*imon);
+  tft.println(" W");
+  tft.println();
+
+
+
+  tft.print("VDD Voltage: ");
+  tft.print(vmon);
+  tft.println(" V");
+
+  tft.print("Ambient Temp: ");
+  tft.print(tmon);
+  tft.println(" C");
+
+  tft.print("Heater & Acc. Current: ");
+  tft.print(imon);
+  tft.println(" A");
+}
+
+/**
+ * @brief Initial setup for JBCNano
+ * 
+ */
 void setup() {
   /* Initialize peripherals */
   Serial.begin(SERIAL_BAUD);
@@ -260,23 +321,29 @@ void setup() {
   tft.setCursor(0, 0);
   tft.print("JBC NANO");
   
-  /* Allow for system settling time delay */
+  /* Allow for system settling time delay, and clear bootup logo */
   beep(0);
-  delay(200);
+  delay(500);
   beep(1);
+  tft.fillScreen(ST77XX_BLACK);
 
   /* Enable ISR after setup*/
   interrupts();
 }
 
+/**
+ * @brief Main control loop for JBCNano
+ * 
+ */
 void loop() {
-
-  /* UVLO */
+  /* UVLO - Under Voltage Lockout */
   if (get_vmon() < VDD_MINIMUM) {
     /* Disable pwm outputs to protect mosfet gate driver */
-    digitalWrite(HEATER_LO, 0);
-    digitalWrite(HEATER_HI, 0);
+    analogWrite(HEATER_LO, 0);
+    OCR1A = 0;
     uvlo = 1;
+  } else {
+    uvlo = 0;
   }
 
   /* Overtemperature lockout for tip and tmon */
@@ -288,4 +355,20 @@ void loop() {
     while(1);
   }
 
+  /* Loop variables */
+  int   actual_temp    = get_tc();
+  int   set_temp       = (digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
+  int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
+  int   set_pwr_acc    = get_pwr_acc();
+  float vmon           = get_vmon();
+  float tmon           = get_tmon();
+  float imon           = get_imon();
+
+
+
+
+
+
+  /* Update the TFT display */
+  update_tft(actual_temp, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon);
 }
