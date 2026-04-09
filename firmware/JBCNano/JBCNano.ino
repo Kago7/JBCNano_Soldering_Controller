@@ -5,7 +5,6 @@
  * @version 1.0
  * @date 2026-04-07
  * 
- * @copyright Copyright (c) 2026
  * 
  */
 
