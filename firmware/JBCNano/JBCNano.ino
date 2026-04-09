@@ -235,6 +235,7 @@ void beep(bool freq_type) {
 void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon) {
   /* Update display with specific sensor data */
   tft.fillScreen(ST77XX_BLACK);
+  tft.setTextSize(2);
   tft.setCursor(0, 0);
 
   tft.print("Actual Temp: ");
@@ -317,7 +318,7 @@ void setup() {
   tft.initR(INITR_BLACKTAB);
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextColor(ST77XX_WHITE);
-  tft.setTextSize(2);
+  tft.setTextSize(7);
   tft.setCursor(0, 0);
   tft.print("JBC NANO");
   
@@ -356,10 +357,12 @@ void loop() {
   }
 
   /* Loop variables */
+  set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
+  set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
   int   actual_temp    = get_tc();
-  int   set_temp       = (digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
+  int   set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
   int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
-  int   set_pwr_acc    = get_pwr_acc();
+  int   set_pwr_acc    = (set_pwr_acc_en) ? get_pwr_acc() : 0;
   float vmon           = get_vmon();
   float tmon           = get_tmon();
   float imon           = get_imon();
