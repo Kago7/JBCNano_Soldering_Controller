@@ -22,7 +22,7 @@
 #define IMON                A2
 #define SET_PWR_ACC         A3
 #define TMON                A4
-#define TFT_RST             A5
+#define TFT_DC              A5
 #define SET_TEMP            A6
 #define SET_PWR_HEATER      A7
 
@@ -38,7 +38,7 @@
 #define HEATER_HI           9
 #define TFT_CS              10
 #define MOSI                11
-#define TFT_DC              12
+#define TFT_RST             12
 #define SCK                 13
 
 /* CONFIG DEFINES */
@@ -55,7 +55,12 @@
 #define TC_CONV_FACTOR      100
 #define IMON_CONV_FACTOR    1.57f
 
+#define HEATER_MIN_TEMP     25
+#define HEATER_MAX_TEMP     450
+
 #define VDD_MINIMUM         10
+
+#define TFT_SPI_SPEED       8000000
 
 /* CARTRIDGE DEFINES */
 #define KP_C115 					5
@@ -80,7 +85,7 @@
 #define RESISTANCE_C245   3.4f
 
 
-/* #define DEBUG */
+#define DEBUG
 
 
 /* Global fields */
@@ -92,7 +97,6 @@ bool uvlo = 0;
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
-
 
 /* ISRs */
 
@@ -190,7 +194,7 @@ int get_pwr_acc() {
  * @return int 
  */
 int get_temp() {
-  int temp = map(analogRead(SET_TEMP), 0, ADC_NUM_COUNTS, 25, 450);
+  int temp = map(analogRead(SET_TEMP), 0, ADC_NUM_COUNTS, HEATER_MIN_TEMP, HEATER_MAX_TEMP);
   return ((temp + 2) / 5) * 5;
 }
 
@@ -238,6 +242,25 @@ void beep(bool freq_type) {
 }
 
 /**
+ * @brief Used for value color gradients in TFT display from green (min) to red (max)
+ * 
+ * @param val 
+ * @param min 
+ * @param max 
+ * @return uint16_t 
+ */
+uint16_t value_to_color(int val, int min, int max) {
+  /* Convert value to a rgb color */
+  if (val < min) val = min;
+  if (val > max) val = max;
+  float t = (float)(val - min)/(max - min);
+  t = pow(t, 0.5);
+  uint8_t r = t * 255;
+  uint8_t g = (1.0 - t) * 255;
+  return tft.color565(r, g, 0);
+}
+
+/**
  * @brief Update the TFT display with specific sensor data
  * 
  * @param set_temp 
@@ -250,45 +273,52 @@ void beep(bool freq_type) {
  */
 void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon) {
   /* Update display with specific sensor data */
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setTextSize(2);
+  tft.setTextSize(1);
   tft.setCursor(0, 0);
 
-  tft.print("Actual Temp: ");
+  /* update text color green - red based on temp */
+  tft.setTextColor(value_to_color(actual_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
+  tft.print("Tip Temp: ");
+  tft.setTextSize(2);
   tft.print(actual_temp);
-  tft.println(" C");
+  tft.println("C");
+  tft.setTextSize(1);
 
+  tft.setTextColor(value_to_color(set_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
   tft.print("Set Temp: ");
+  tft.setTextSize(2);
   tft.print(set_temp);
-  tft.println(" C");
+  tft.println("C");
+  tft.setTextSize(1);
   tft.println();
 
 
 
+  tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
   tft.print("Set Power Heater: ");
   tft.print(set_pwr_heater);
   tft.println(" W");
 
-  tft.print("Set Power Acc.: ");
+  tft.print("Set Power Acc: ");
   tft.print(set_pwr_acc);
   tft.println(" W");
 
-  tft.print("Heater & Acc. Power: ");
+  tft.print("Power: ");
   tft.print(vmon*imon);
   tft.println(" W");
   tft.println();
 
 
 
-  tft.print("VDD Voltage: ");
+  tft.print("VMON: ");
   tft.print(vmon);
   tft.println(" V");
 
-  tft.print("Ambient Temp: ");
+  tft.print("Ambient: ");
   tft.print(tmon);
   tft.println(" C");
 
-  tft.print("Heater & Acc. Current: ");
+  tft.print("Current: ");
   tft.print(imon);
   tft.println(" A");
 }
@@ -331,18 +361,15 @@ void setup() {
   ICR1    = ((F_CPU/8)/HEATER_FREQ);     /* Set output frequency */
 
   /* Initialize TFT */
+  tft.setSPISpeed(TFT_SPI_SPEED);
   tft.initR(INITR_BLACKTAB);
   tft.fillScreen(ST77XX_BLACK);
-  tft.setTextColor(ST77XX_WHITE);
-  tft.setTextSize(7);
-  tft.setCursor(0, 0);
-  tft.print("JBC NANO");
+  tft.setRotation(2);
   
-  /* Allow for system settling time delay, and clear bootup logo */
+  /* Allow for system settling time delay */
   beep(0);
-  delay(500);
+  delay(200);
   beep(1);
-  tft.fillScreen(ST77XX_BLACK);
 
   /* Enable ISR after setup*/
   interrupts();
@@ -364,13 +391,13 @@ void loop() {
   }
 
   /* Overtemperature lockout for tip and tmon */
-  if (get_tmon() > 40 || get_tc() > 475) {
-    /* Disable pwm outputs to mosfets and play buzzer */
-    digitalWrite(HEATER_LO, 0);
-    digitalWrite(HEATER_HI, 0);
-    tone(BUZZER, BUZZER_FREQ_LO);
-    while(1);
-  }
+  // if (get_tmon() > 40 || get_tc() > 475) {
+  //   /* Disable pwm outputs to mosfets and play buzzer */
+  //   digitalWrite(HEATER_LO, 0);
+  //   digitalWrite(HEATER_HI, 0);
+  //   tone(BUZZER, BUZZER_FREQ_LO);
+  //   while(1);
+  // }
 
   /* Loop variables */
   set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
@@ -384,7 +411,10 @@ void loop() {
   float imon           = get_imon();
 
 
-
+  /* DEBUG */
+  #ifdef DEBUG
+    Serial.println("loop running");
+  #endif
 
 
 
