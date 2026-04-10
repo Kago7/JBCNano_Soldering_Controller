@@ -57,6 +57,8 @@
 
 #define HEATER_MIN_TEMP     25
 #define HEATER_MAX_TEMP     450
+#define HEATER_MIN_PWR      0
+#define HEATER_MAX_PWR      100
 
 #define VDD_MINIMUM         10
 
@@ -185,7 +187,7 @@ int get_tc() {
  * @return int 
  */
 int get_pwr_acc() {
-  return map(analogRead(SET_PWR_ACC), 0, ADC_NUM_COUNTS, 0, 100);
+  return map(analogRead(SET_PWR_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -204,7 +206,7 @@ int get_temp() {
  * @return int 
  */
 int get_pwr_heater() {
-  return map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, 0, 100);
+  return map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -284,43 +286,65 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_a
   tft.println("C");
   tft.setTextSize(1);
 
-  tft.setTextColor(value_to_color(set_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
-  tft.print("Set Temp: ");
+  /* update text color green - red based on temp, conditional update on change for set values */
+  static int last_set_temp, last_set_pwr_heater, last_set_pwr_acc;
+  if ( (last_set_temp != set_temp) || (last_set_pwr_heater != set_pwr_heater) || (last_set_pwr_acc != set_pwr_acc) ) {
+    tft.setTextColor(value_to_color(set_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
+    tft.print("Set Temp: ");
+    tft.setTextSize(2);
+    tft.print(set_temp);
+    tft.println("C");
+    tft.setTextSize(1);
+    tft.println();
+
+    tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
+    tft.print("Set Pwr Tip: ");
+    tft.setTextSize(2);
+    tft.print(set_pwr_heater);
+    tft.println("W");
+    tft.setTextSize(1);
+
+    tft.print("Set Pwr Acc: ");
+    tft.setTextSize(2);
+    tft.print(set_pwr_acc);
+    tft.println("W");
+    tft.setTextSize(1);
+
+    Serial.println(tft.getCursorX());
+    Serial.println(tft.getCursorY());
+  }
+
+  last_set_temp = set_temp;
+  last_set_pwr_heater = set_pwr_heater;
+  last_set_pwr_acc = set_pwr_acc;
+
+  
+  
+  /* update text color green - red based on power */
+  int power = vmon*imon;
+  tft.setCursor(0, 72);
+  tft.setTextColor(value_to_color(power, HEATER_MIN_PWR, HEATER_MAX_PWR), ST77XX_BLACK);
+  tft.print("Total Power: ");
   tft.setTextSize(2);
-  tft.print(set_temp);
-  tft.println("C");
-  tft.setTextSize(1);
+  tft.print(power);
+  tft.println("W");
   tft.println();
-
-
-
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
-  tft.print("Set Power Heater: ");
-  tft.print(set_pwr_heater);
-  tft.println(" W");
-
-  tft.print("Set Power Acc: ");
-  tft.print(set_pwr_acc);
-  tft.println(" W");
-
-  tft.print("Power: ");
-  tft.print(vmon*imon);
-  tft.println(" W");
-  tft.println();
 
 
 
-  tft.print("VMON: ");
-  tft.print(vmon);
-  tft.println(" V");
 
-  tft.print("Ambient: ");
-  tft.print(tmon);
-  tft.println(" C");
+  // tft.print("VMON: ");
+  // tft.print(vmon);
+  // tft.println(" V");
 
-  tft.print("Current: ");
-  tft.print(imon);
-  tft.println(" A");
+  // tft.print("Ambient: ");
+  // tft.print(tmon);
+  // tft.println(" C");
+
+  // tft.print("Current: ");
+  // tft.print(imon);
+  // tft.println(" A");
 }
 
 /**
