@@ -273,7 +273,7 @@ uint16_t value_to_color(int val, int min, int max) {
  * @param tmon 
  * @param imon 
  */
-void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon) {
+void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon, eCartridgeT handle) {
   /* Update display with specific sensor data */
   tft.setTextSize(1);
   tft.setCursor(0, 0);
@@ -332,7 +332,7 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_a
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
 
 
-
+  static int last_handle, last_vmon, last_ambient;
 
   // tft.print("VMON: ");
   // tft.print(vmon);
@@ -417,6 +417,7 @@ void loop() {
   /* Overtemperature lockout for tip and tmon */
   // if (get_tmon() > 40 || get_tc() > 475) {
   //   /* Disable pwm outputs to mosfets and play buzzer */
+  //   noInterrupts();
   //   digitalWrite(HEATER_LO, 0);
   //   digitalWrite(HEATER_HI, 0);
   //   tone(BUZZER, BUZZER_FREQ_LO);
@@ -433,15 +434,35 @@ void loop() {
   float vmon           = get_vmon();
   float tmon           = get_tmon();
   float imon           = get_imon();
+  eCartridgeT handle   = detect_handle_type();
 
+  /* Run the PID loop, and apply pwm if no uvlo */
+  if (uvlo == 0) {
+    /* Set HEATER_LO duty cycle */
+    analogWrite(HEATER_LO, 0);
+    /* PID to determine what duty cycle to apply to HEATER_HI */
+
+    /* Limit HEATER_HI duty cycle based on handle power limits */
+
+  } else {
+    /* Disable pwm outputs to protect mosfet gate driver */
+    analogWrite(HEATER_LO, 0);
+    OCR1A = 0;
+  }
+
+
+
+
+
+
+
+
+
+  /* Update the TFT display */
+  update_tft(actual_temp, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon, handle);
 
   /* DEBUG */
   #ifdef DEBUG
     Serial.println("loop running");
   #endif
-
-
-
-  /* Update the TFT display */
-  update_tft(actual_temp, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon);
 }
