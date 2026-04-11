@@ -309,9 +309,6 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_a
     tft.print(set_pwr_acc);
     tft.println("W");
     tft.setTextSize(1);
-
-    Serial.println(tft.getCursorX());
-    Serial.println(tft.getCursorY());
   }
 
   last_set_temp = set_temp;
@@ -328,23 +325,54 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_a
   tft.setTextSize(2);
   tft.print(power);
   tft.println("W");
+  tft.setTextSize(1);
   tft.println();
   tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
 
 
-  static int last_handle, last_vmon, last_ambient;
+  static int last_handle, last_vmon, last_tmon;
+  if ( (last_handle != handle) || (last_vmon != (int)vmon) || (last_tmon != (int)tmon) ) {
+    tft.setTextSize(1);
+    tft.print("Handle:  ");
+    tft.setTextSize(2);
+    switch(handle) {
+      case C115:
+        tft.print("115");
+        break;
+      case C210:
+        tft.print("210");
+        break;
+      case C245:
+        tft.print("245");
+        break;
+      default:
+        tft.print("---");
+    }
+    tft.println();
 
-  // tft.print("VMON: ");
-  // tft.print(vmon);
-  // tft.println(" V");
+    tft.setTextSize(1);
+    tft.print("VMON:    ");
+    tft.setTextSize(2);
+    tft.print(vmon);
+    tft.println("V");
 
-  // tft.print("Ambient: ");
-  // tft.print(tmon);
-  // tft.println(" C");
+    tft.setTextSize(1);
+    tft.print("Ambient: ");
+    tft.setTextSize(2);
+    tft.print((int)tmon);
+    tft.println("C");
 
-  // tft.print("Current: ");
-  // tft.print(imon);
-  // tft.println(" A");
+  }
+  last_handle = handle;
+  last_vmon   = (int)vmon;
+  last_tmon   = (int)tmon;
+
+  tft.setCursor(0, 144);
+  tft.setTextSize(1);
+  tft.print("Current: ");
+  tft.setTextSize(2);
+  tft.print(imon);
+  tft.println("A");
 }
 
 /**
