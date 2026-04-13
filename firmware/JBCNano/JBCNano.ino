@@ -95,6 +95,7 @@ volatile bool set_pwr_heater_en = 0;
 volatile bool set_pwr_acc_en    = 0;
 
 bool uvlo = 0;
+char buf[10] = {0};
 
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
@@ -256,9 +257,20 @@ uint16_t value_to_color(int val, int min, int max) {
   if (val < min) val = min;
   if (val > max) val = max;
   float t = (float)(val - min)/(max - min);
-  t = pow(t, 0.5);
-  uint8_t r = t * 255;
-  uint8_t g = (1.0 - t) * 255;
+  /* bias toward early color change */
+  t = pow(t, 0.3);
+  uint8_t r, g;
+  if (t < 0.5) {
+    /* green → yellow */ 
+    float tt = t * 2.0;
+    r = tt * 255;
+    g = 255;
+  } else {
+    /* yellow → red */ 
+    float tt = (t - 0.5) * 2.0;
+    r = 255;
+    g = (1.0 - tt) * 255;
+  }
   return tft.color565(r, g, 0);
 }
 
@@ -427,6 +439,7 @@ void setup() {
   interrupts();
 }
 
+
 /**
  * @brief Main control loop for JBCNano
  * 
@@ -487,7 +500,7 @@ void loop() {
 
 
   /* Update the TFT display */
-  update_tft(actual_temp, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon, handle);
+  update_tft(actual_temp%450, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon, handle);
 
   /* DEBUG */
   #ifdef DEBUG
