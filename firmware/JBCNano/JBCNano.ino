@@ -15,12 +15,13 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
+#include "PID_v1.h"
 
 /* PINOUT DEFINES */
 #define VMON                A0
 #define TC                  A1
 #define IMON                A2
-#define SET_PWR_ACC         A3
+#define SET_PWM_ACC         A3
 #define TMON                A4
 #define TFT_DC              A5
 #define SET_TEMP            A6
@@ -100,6 +101,9 @@ char buf[10] = {0};
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
 Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
+
+double actual_temp, pid_output, set_temp;
+PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT);
 
 /* ISRs */
 
@@ -183,12 +187,12 @@ int get_tc() {
 }
 
 /**
- * @brief Get the accessory pwr set by potentiometer mapped to 0W-100W
+ * @brief Get the accessory pwm set by potentiometer mapped to 0%-100%
  * 
  * @return int 
  */
-int get_pwr_acc() {
-  return map(analogRead(SET_PWR_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
+int get_pwm_acc() {
+  return map(analogRead(SET_PWM_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -285,7 +289,7 @@ uint16_t value_to_color(int val, int min, int max) {
  * @param tmon 
  * @param imon 
  */
-void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_acc, float vmon, float tmon, float imon, eCartridgeT handle) {
+void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_acc, float vmon, float tmon, float imon, eCartridgeT handle) {
   /* Update display with specific sensor data */
   tft.setTextSize(1);
   tft.setCursor(0, 0);
@@ -316,10 +320,10 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwr_a
     tft.println("W");
     tft.setTextSize(1);
 
-    tft.print("Set Pwr Acc: ");
+    tft.print("Set Pwm Acc: ");
     tft.setTextSize(2);
-    tft.print(set_pwr_acc);
-    tft.println("W");
+    tft.print(set_pwm_acc);
+    tft.println("%");
     tft.setTextSize(1);
   }
 
@@ -429,6 +433,11 @@ void setup() {
   tft.initR(INITR_BLACKTAB);
   tft.fillScreen(ST77XX_BLACK);
   tft.setRotation(2);
+
+  /* Initialize PID Controller */
+  pid.SetMode(AUTOMATIC);
+  pid.SetSampleTime(5);
+  pid.SetOutputLimits(0, 100);
   
   /* Allow for system settling time delay */
   beep(0);
@@ -468,21 +477,36 @@ void loop() {
   /* Loop variables */
   set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
   set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
-  int   actual_temp    = get_tc();
-  int   set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
+        actual_temp    = get_tc();
+        set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
   int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
-  int   set_pwr_acc    = (set_pwr_acc_en) ? get_pwr_acc() : 0;
+  int   set_pwm_acc    = (set_pwr_acc_en) ? get_pwm_acc() : 0;
   float vmon           = get_vmon();
   float tmon           = get_tmon();
   float imon           = get_imon();
   eCartridgeT handle   = detect_handle_type();
 
+  /* Configure PID constants based on handle */
+  switch(handle) {
+    case C115:
+      pid.SetTunings(KP_C115, KI_C115, KD_C115);
+      break;
+    case C210:
+      pid.SetTunings(KP_C210, KI_C210, KD_C210);
+      break;
+    case C245:
+      pid.SetTunings(KP_C245, KI_C245, KD_C245);
+      break;
+    default:
+      pid.SetTunings(KP_C245, KI_C245, KD_C245);
+  }
+
   /* Run the PID loop, and apply pwm if no uvlo */
   if (uvlo == 0) {
-    /* Set HEATER_LO duty cycle */
-    analogWrite(HEATER_LO, 0);
+    /* Set HEATER_LO pwm% duty cycle */
+    analogWrite(HEATER_LO, 255*set_pwm_acc/HEATER_MAX_PWR);
     /* PID to determine what duty cycle to apply to HEATER_HI */
-
+    pid.Compute();
     /* Limit HEATER_HI duty cycle based on handle power limits */
 
   } else {
@@ -500,7 +524,7 @@ void loop() {
 
 
   /* Update the TFT display */
-  update_tft(actual_temp%450, set_temp, set_pwr_heater, set_pwr_acc, vmon, tmon, imon, handle);
+  update_tft((int)actual_temp, (int)set_temp, set_pwr_heater, set_pwm_acc, vmon, tmon, imon, handle);
 
   /* DEBUG */
   #ifdef DEBUG
