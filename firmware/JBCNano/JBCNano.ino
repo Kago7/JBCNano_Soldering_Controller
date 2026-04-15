@@ -507,7 +507,7 @@ void loop() {
     analogWrite(HEATER_LO, 255*set_pwm_acc/HEATER_MAX_PWR);
     /* PID to determine what duty cycle to apply to HEATER_HI */
     pid.Compute();
-    /* Limit HEATER_HI duty cycle based on handle power limits */
+    /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits */
 
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
@@ -528,6 +528,11 @@ void loop() {
 
   /* DEBUG */
   #ifdef DEBUG
-    Serial.println("loop running");
+    /* Print dynamic variables to serial monitor/plotter */
+    Serial.print("Actual Temp:");
+    Serial.print((int)actual_temp);
+    Serial.print(",");
+    Serial.print("Set Temp:");
+    Serial.println((int)set_temp);
   #endif
 }
