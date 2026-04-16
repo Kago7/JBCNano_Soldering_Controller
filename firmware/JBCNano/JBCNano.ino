@@ -78,14 +78,14 @@
 #define KD_C210 					0.3
 #define MAX_I_C210 			  300
 #define MAX_POWER_C210    65
-#define RESISTANCE_C210   3.4f
+#define RESISTANCE_C210   2.4f
 
 #define KP_C245 					8
 #define KI_C245 					2
 #define KD_C245 					0.5
 #define MAX_I_C245 				300
 #define MAX_POWER_C245    100
-#define RESISTANCE_C245   3.4f
+#define RESISTANCE_C245   2.4f
 
 
 #define DEBUG
