@@ -27,7 +27,16 @@ jobs:
           arduino-cli lib install "Adafruit GFX Library"
           arduino-cli lib install "Adafruit ST7735 and ST7789 Library"
 
-    - name: Compile
+    - name: Compile and Export Binary
       run: |
-        arduino-cli compile --fqbn arduino:avr:nano ./firmware/JBCNano
-        
+        arduino-cli compile --fqbn arduino:avr:nano --output-dir build --export-binaries ./firmware/JBCNano
+
+    - name: Generate timestamp
+      id: vars
+      run: echo "DATE=$(date +'%Y-%m-%d_%H-%M-%S')" >> $GITHUB_ENV
+
+    - name: Upload Firmware Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: firmware-${{ env.DATE }}
+        path: build/
