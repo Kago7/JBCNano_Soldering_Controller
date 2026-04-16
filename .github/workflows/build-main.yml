@@ -1,0 +1,6 @@
+name: JBC_Nano Build
+
+on:
+    push:
+    pull_request:
+
