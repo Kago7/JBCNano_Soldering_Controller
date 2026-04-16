@@ -165,11 +165,12 @@ float get_imon() {
 }
 
 /**
- * @brief Get the iron tip thermocouple temperature in degrees C. HEATER_HI turned OFF during this function for accuracy.
+ * @brief Get the iron tip thermocouple temperature in degrees C based on cartridge type. HEATER_HI turned OFF during this function for accuracy.
  * @note  Consider implementing oversampling instead.
+ * @param handle 
  * @return int 
  */
-int get_tc() {
+int get_tc(eCartridgeT handle) {
   /* Disable and save HEATER_HI duty cycle, wait 0.5ms for TC to stabilize */
   uint16_t avg = 0;
   uint16_t duty = OCR1A;
@@ -181,9 +182,21 @@ int get_tc() {
   }
   /* Restore HEATER_HI duty cycle */
   OCR1A = duty;
-  /* Compute temperature in degrees C + Cold Junction Compensation */
+  /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
   avg = avg / 10;
-  return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+  switch (handle) {
+    case C115:
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      break;
+    case C210:
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      break;
+    case C245:
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      break;
+    default:
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+  }
 }
 
 /**
@@ -239,6 +252,7 @@ eCartridgeT detect_handle_type() {
 /**
  * @brief Simply beep the buzzer briefly in 2 possible tones for audio feedback.
  * 
+ * @param freq_type 
  */
 void beep(bool freq_type) {
   if (freq_type) {
@@ -477,14 +491,14 @@ void loop() {
   /* Loop variables */
   set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
   set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
-        actual_temp    = get_tc();
+  eCartridgeT handle   = detect_handle_type();
+        actual_temp    = get_tc(handle);
         set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
   int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
   int   set_pwm_acc    = (set_pwr_acc_en) ? get_pwm_acc() : 0;
   float vmon           = get_vmon();
   float tmon           = get_tmon();
   float imon           = get_imon();
-  eCartridgeT handle   = detect_handle_type();
 
   /* Configure PID constants based on handle */
   switch(handle) {
