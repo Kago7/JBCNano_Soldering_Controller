@@ -56,7 +56,7 @@
 #define TC_CONV_FACTOR      100
 #define IMON_CONV_FACTOR    1.57f
 
-#define TMON_OFFSET         0
+#define TMON_OFFSET         -10
 
 #define HEATER_MIN_TEMP     25
 #define HEATER_MAX_TEMP     450
@@ -218,7 +218,7 @@ int get_tc(eCartridgeT handle) {
  * @return int 
  */
 int get_pwm_acc() {
-  return HEATER_MAX_PWR - map(analogRead(SET_PWM_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
+  return HEATER_MIN_PWR + HEATER_MAX_PWR - map(analogRead(SET_PWM_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -237,7 +237,7 @@ int get_temp() {
  * @return int 
  */
 int get_pwr_heater() {
-  return HEATER_MAX_PWR - map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
+  return HEATER_MIN_PWR + HEATER_MAX_PWR - map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
