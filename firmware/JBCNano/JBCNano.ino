@@ -76,7 +76,7 @@
 #define MAX_I_C115 				300
 #define MAX_POWER_C115    25
 #define RESISTANCE_C115   3.4f
-#define TC_UV_C_C115      6.92f
+#define TC_UV_C_C115      .00000692f
 
 #define KP_C210 					7
 #define KI_C210 					4
@@ -84,7 +84,7 @@
 #define MAX_I_C210 			  300
 #define MAX_POWER_C210    65
 #define RESISTANCE_C210   2.4f
-#define TC_UV_C_C210      9.38f
+#define TC_UV_C_C210      .00000938f
 
 #define KP_C245 					8
 #define KI_C245 					2
@@ -92,7 +92,7 @@
 #define MAX_I_C245 				300
 #define MAX_POWER_C245    100
 #define RESISTANCE_C245   2.4f
-#define TC_UV_C_C245      25.72f
+#define TC_UV_C_C245      .00002572f
 
 /* Global fields */
 volatile bool set_pwr_heater_en = 0;
