@@ -94,15 +94,12 @@
 #define RESISTANCE_C245   2.4f
 #define TC_UV_C_C245      25.72f
 
-
-#define DEBUG
-
-
 /* Global fields */
 volatile bool set_pwr_heater_en = 0;
 volatile bool set_pwr_acc_en    = 0;
 
 bool uvlo = 0;
+bool serial_enable = 0;
 char buf[10] = {0};
 
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
@@ -121,9 +118,9 @@ PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT)
 void set_pwr_heater_en_isr() {
   set_pwr_heater_en = 0;
   OCR1A = 0;
-  #ifdef DEBUG
+  if (serial_enable) {
     Serial.println("isr fired");
-  #endif
+  }
   return;
 }
 
@@ -134,9 +131,9 @@ void set_pwr_heater_en_isr() {
 void set_pwr_acc_en_isr() {
   set_pwr_acc_en = 0;
   analogWrite(HEATER_LO, 0);
-  #ifdef DEBUG
+  if (serial_enable) {
     Serial.println("isr fired");
-  #endif
+  }
   return;
 }
 
@@ -248,14 +245,12 @@ int get_pwr_heater() {
 /**
  * @brief Handle type detection logic based on handle sense 1/2 inputs.
  *        Cannot distinguish if handle is actually installed or not due to input pullups for C245 case.
- * 
+ * @param hs1
+ * @param hs2
  * @return eCartridgeT 
  */
-eCartridgeT detect_handle_type() {
-  /* Read handle sense inputs (active low) and return handle type */
-  bool hs1 = !digitalRead(HANDLE_SENSE_1_IN);
-  bool hs2 = !digitalRead(HANDLE_SENSE_2_IN);
-
+eCartridgeT detect_handle_type(bool hs1, bool hs2) {
+  /* Return handle type */
   if (hs1 & hs2) {
     return NONE;
   } else if (!hs1 & !hs2) {
@@ -448,9 +443,14 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
  * 
  */
 void setup() {
-  /* Initialize peripherals */
-  Serial.begin(SERIAL_BAUD);
+  /* Initialize peripherals, Serial only if UVLO */
   analogReference(DEFAULT);
+  if (get_vmon() < VDD_MINIMUM) {
+    Serial.begin(SERIAL_BAUD);
+    serial_enable = 1;
+  } else {
+    serial_enable = 0;
+  }
 
   /* Initialize inputs */
   pinMode(HANDLE_SENSE_1_IN  , INPUT_PULLUP);
@@ -508,7 +508,7 @@ void setup() {
 void loop() {
   /* UVLO - Under Voltage Lockout */
   if (get_vmon() < VDD_MINIMUM) {
-    /* Disable pwm outputs to protect mosfet gate driver */
+    /* Disable pwm outputs to protect mosfets/gate driver */
     analogWrite(HEATER_LO, 0);
     OCR1A = 0;
     uvlo = 1;
@@ -529,7 +529,9 @@ void loop() {
   /* Loop variables */
   set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
   set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
-  eCartridgeT handle   = detect_handle_type();
+  bool  hs1            = !digitalRead(HANDLE_SENSE_1_IN);
+  bool  hs2            = !digitalRead(HANDLE_SENSE_2_IN);
+  eCartridgeT handle   = detect_handle_type(hs1, hs2);
   bool  stand_sense    = !digitalRead(STAND_SENSE_IN);
   bool  tip_change     = !digitalRead(TIP_CHANGE_SENSE_IN);
         actual_temp    = get_tc(handle);
@@ -570,18 +572,11 @@ void loop() {
   }
 
 
-
-
-
-
-
-
-
   /* Update the TFT display */
   update_tft((int)actual_temp, (int)set_temp, set_pwr_heater, set_pwm_acc, vmon, tmon, imon, handle);
 
   /* DEBUG */
-  #ifdef DEBUG
+  if (serial_enable) {
     /* Print dynamic variables to serial monitor/plotter */
     Serial.print("Actual Temp:");
     Serial.print((int)actual_temp);
@@ -592,6 +587,10 @@ void loop() {
     Serial.println((int)stand_sense);
     Serial.print("Tip Change:");
     Serial.println((int)tip_change);
+    Serial.print("HS1:");
+    Serial.println((int)hs1);
+    Serial.print("HS2:");
+    Serial.println((int)hs2);
 
     Serial.print("Set PWR:");
     Serial.println((int)set_pwr_heater);
@@ -606,5 +605,5 @@ void loop() {
     Serial.println(vmon);
 
     Serial.println();
-  #endif
+  }
 }
