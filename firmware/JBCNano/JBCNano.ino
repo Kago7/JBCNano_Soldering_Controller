@@ -56,9 +56,11 @@
 #define TC_CONV_FACTOR      100
 #define IMON_CONV_FACTOR    1.57f
 
+#define TMON_OFFSET         0
+
 #define HEATER_MIN_TEMP     25
 #define HEATER_MAX_TEMP     450
-#define HEATER_MIN_PWR      0
+#define HEATER_MIN_PWR      1
 #define HEATER_MAX_PWR      100
 
 #define VDD_MINIMUM         10
@@ -114,6 +116,9 @@ PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT)
 void set_pwr_heater_en_isr() {
   set_pwr_heater_en = 0;
   OCR1A = 0;
+  #ifdef DEBUG
+    Serial.println("isr fired");
+  #endif
   return;
 }
 
@@ -124,6 +129,9 @@ void set_pwr_heater_en_isr() {
 void set_pwr_acc_en_isr() {
   set_pwr_acc_en = 0;
   analogWrite(HEATER_LO, 0);
+  #ifdef DEBUG
+    Serial.println("isr fired");
+  #endif
   return;
 }
 
@@ -140,12 +148,17 @@ float get_vmon() {
 }
 
 /**
- * @brief Get the temperature reading in degrees C from MCP9700T-E/TT
+ * @brief Get the averaged temperature reading in degrees C from MCP9700T-E/TT
  * 
  * @return float 
  */
 float get_tmon() {
-  return ( ADC_REF_VOLTAGE*(analogRead(TMON)/(float)ADC_NUM_COUNTS) - 0.5) * 100;
+  /* average 10 times */
+  float tmon = 0;
+  for (int i=0; i<10; i++) {
+    tmon += ( ADC_REF_VOLTAGE*(analogRead(TMON)/(float)ADC_NUM_COUNTS) - 0.5) * 100;
+  }
+  return (tmon / 10.0) + TMON_OFFSET;
 }
 
 /**
@@ -205,7 +218,7 @@ int get_tc(eCartridgeT handle) {
  * @return int 
  */
 int get_pwm_acc() {
-  return map(analogRead(SET_PWM_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
+  return HEATER_MAX_PWR - map(analogRead(SET_PWM_ACC), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -215,7 +228,7 @@ int get_pwm_acc() {
  */
 int get_temp() {
   int temp = map(analogRead(SET_TEMP), 0, ADC_NUM_COUNTS, HEATER_MIN_TEMP, HEATER_MAX_TEMP);
-  return ((temp + 2) / 5) * 5;
+  return HEATER_MAX_TEMP - ((temp + 2) / 5) * 5 + HEATER_MIN_TEMP;
 }
 
 /**
@@ -224,7 +237,7 @@ int get_temp() {
  * @return int 
  */
 int get_pwr_heater() {
-  return map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
+  return HEATER_MAX_PWR - map(analogRead(SET_PWR_HEATER), 0, ADC_NUM_COUNTS, HEATER_MIN_PWR, HEATER_MAX_PWR);
 }
 
 /**
@@ -431,8 +444,8 @@ void setup() {
 
   /* Initialize interrupts */
   noInterrupts();
-  attachInterrupt(digitalPinToInterrupt(SET_PWR_HEATER_EN), set_pwr_heater_en_isr, FALLING);
-  attachInterrupt(digitalPinToInterrupt(SET_PWR_ACC_EN)   , set_pwr_acc_en_isr   , FALLING);
+  attachInterrupt(digitalPinToInterrupt(SET_PWR_HEATER_EN), set_pwr_heater_en_isr, RISING);
+  attachInterrupt(digitalPinToInterrupt(SET_PWR_ACC_EN)   , set_pwr_acc_en_isr   , RISING);
 
   /* Initialize 20KHz PWM on Timer1 for Heater Gate Driver */
   TCCR1A  = 0;
@@ -493,7 +506,7 @@ void loop() {
   set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
   eCartridgeT handle   = detect_handle_type();
         actual_temp    = get_tc(handle);
-        set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 25;
+        set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 0;
   int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
   int   set_pwm_acc    = (set_pwr_acc_en) ? get_pwm_acc() : 0;
   float vmon           = get_vmon();
@@ -548,5 +561,19 @@ void loop() {
     Serial.print(",");
     Serial.print("Set Temp:");
     Serial.println((int)set_temp);
+
+    Serial.print("Set PWR:");
+    Serial.println((int)set_pwr_heater);
+
+    Serial.print("Set PWM:");
+    Serial.println((int)set_pwm_acc);
+
+    Serial.print("Ambient Temp:");
+    Serial.println(tmon);
+
+    Serial.print("VMON:");
+    Serial.println(vmon);
+
+    Serial.println();
   #endif
 }
