@@ -56,7 +56,7 @@
 #define TC_CONV_FACTOR      100
 #define IMON_CONV_FACTOR    1.57f
 
-#define TMON_OFFSET         -10
+#define TMON_OFFSET         0
 
 #define HEATER_MIN_TEMP     25
 #define HEATER_MAX_TEMP     450
@@ -330,7 +330,9 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
   tft.setTextSize(1);
 
   /* update text color green - red based on temp, conditional update on change for set values */
-  static int last_set_temp, last_set_pwr_heater, last_set_pwm_acc;
+  static int last_set_temp       = -999;
+  static int last_set_pwr_heater = -999;
+  static int last_set_pwm_acc    = -999;
   if ( (last_set_temp != set_temp) || (last_set_pwr_heater != set_pwr_heater) || (last_set_pwm_acc != set_pwm_acc) ) {
     tft.setTextColor(value_to_color(set_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
     tft.print("Set Temp: ");
