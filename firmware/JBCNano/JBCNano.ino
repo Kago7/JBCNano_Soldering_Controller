@@ -53,7 +53,7 @@
 
 #define SERIAL_BAUD         115200
 
-#define TC_CONV_FACTOR      100
+#define TC_GAIN             226.67f
 #define IMON_CONV_FACTOR    1.57f
 
 #define TMON_OFFSET         0
@@ -62,6 +62,8 @@
 #define HEATER_MAX_TEMP     450
 #define HEATER_MIN_PWR      1
 #define HEATER_MAX_PWR      100
+
+#define TIP_STAND_TEMP      150
 
 #define VDD_MINIMUM         10
 
@@ -74,6 +76,7 @@
 #define MAX_I_C115 				300
 #define MAX_POWER_C115    25
 #define RESISTANCE_C115   3.4f
+#define TC_UV_C_C115      6.92f
 
 #define KP_C210 					7
 #define KI_C210 					4
@@ -81,6 +84,7 @@
 #define MAX_I_C210 			  300
 #define MAX_POWER_C210    65
 #define RESISTANCE_C210   2.4f
+#define TC_UV_C_C210      9.38f
 
 #define KP_C245 					8
 #define KI_C245 					2
@@ -88,6 +92,7 @@
 #define MAX_I_C245 				300
 #define MAX_POWER_C245    100
 #define RESISTANCE_C245   2.4f
+#define TC_UV_C_C245      25.72f
 
 
 #define DEBUG
@@ -167,13 +172,13 @@ float get_tmon() {
  * @return float 
  */
 float get_imon() {
-  /* Average over 1ms, default analogRead~100us */
+  /* Average over default analogRead~100us * N */
   uint16_t avg = 0;
-  for (int i=0; i<10; i++) {
+  for (int i=0; i<20; i++) {
     avg += analogRead(IMON);
   }
   /* Compute current in Amps */
-  avg = avg / 10;
+  avg = avg / 20;
   return (ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * IMON_CONV_FACTOR;
 }
 
@@ -199,16 +204,16 @@ int get_tc(eCartridgeT handle) {
   avg = avg / 10;
   switch (handle) {
     case C115:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C115) ) + get_tmon();
       break;
     case C210:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C210) ) + get_tmon();
       break;
     case C245:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + get_tmon();
       break;
     default:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) * TC_CONV_FACTOR) + get_tmon();
+      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + get_tmon();
   }
 }
 
@@ -303,6 +308,24 @@ uint16_t value_to_color(int val, int min, int max) {
     g = (1.0 - tt) * 255;
   }
   return tft.color565(r, g, 0);
+}
+
+/**
+ * @brief Return a set temp based on various tip states.
+ * 
+ * @param tip_change 
+ * @param stand_sense
+ */
+int get_set_temp(bool tip_change, bool stand_sense) {
+  /* Determine tip set temp based on stand inputs and potentiometer */
+  int temp = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 0;
+  if (stand_sense && (temp > TIP_STAND_TEMP) ) temp = TIP_STAND_TEMP;
+  if (tip_change) temp = HEATER_MIN_TEMP;
+  /* Check if 30min. runtime exceeded */
+  if ( (millis() > 1800000) ) {
+    return HEATER_MIN_TEMP;
+  }
+  return temp;
 }
 
 /**
@@ -494,7 +517,7 @@ void loop() {
   }
 
   /* Overtemperature lockout for tip and tmon */
-  // if (get_tmon() > 40 || get_tc() > 475) {
+  // if (get_tmon() > 45 || get_tc() > 475) {
   //   /* Disable pwm outputs to mosfets and play buzzer */
   //   noInterrupts();
   //   digitalWrite(HEATER_LO, 0);
@@ -507,8 +530,10 @@ void loop() {
   set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
   set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
   eCartridgeT handle   = detect_handle_type();
+  bool  stand_sense    = !digitalRead(STAND_SENSE_IN);
+  bool  tip_change     = !digitalRead(TIP_CHANGE_SENSE_IN);
         actual_temp    = get_tc(handle);
-        set_temp       = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 0;
+        set_temp       = get_set_temp(tip_change, stand_sense);
   int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
   int   set_pwm_acc    = (set_pwr_acc_en) ? get_pwm_acc() : 0;
   float vmon           = get_vmon();
@@ -563,6 +588,10 @@ void loop() {
     Serial.print(",");
     Serial.print("Set Temp:");
     Serial.println((int)set_temp);
+    Serial.print("Stand Sense:");
+    Serial.println((int)stand_sense);
+    Serial.print("Tip Change:");
+    Serial.println((int)tip_change);
 
     Serial.print("Set PWR:");
     Serial.println((int)set_pwr_heater);
