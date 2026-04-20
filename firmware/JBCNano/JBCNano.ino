@@ -473,12 +473,14 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(SET_PWR_ACC_EN)   , set_pwr_acc_en_isr   , RISING);
 
   /* Initialize 20KHz PWM on Timer1 for Heater Gate Driver */
-  TCCR1A  = 0;
-  TCCR1B  = 0;
-  TCCR1A |= (1 << WGM11);                /* Mode 14 part 1 */
-  TCCR1B |= (1 << WGM13) | (1 << WGM12); /* Mode 14 part 2 */
-  TCCR1B |= (1 << CS11);                 /* Prescaler = 8 */
-  ICR1    = ((F_CPU/8)/HEATER_FREQ);     /* Set output frequency */
+  TCCR1A  = 0;                           /* Stop Timer1 */
+  TCCR1B  = 0;                           /* Stop Timer1 */
+  TCCR1A |= (1 << COM1A1);               /* Fast-PWM with ICR1 as TOP (Mode 14) */
+  TCCR1A |= (1 << WGM11);                /* Non-inverting mode on OC1A */
+  TCCR1B |= (1 << WGM12) | (1 << WGM13); /* Non-inverting mode on OC1A */
+  TCCR1B |= (1 << CS10);                 /* Prescaler = 1 */
+  ICR1    = (F_CPU/HEATER_FREQ) - 1;     /* Set output frequency */
+  OCR1A   = 0;                           /* Start with 0% Duty Cycle */
 
   /* Initialize TFT */
   tft.setSPISpeed(TFT_SPI_SPEED);
