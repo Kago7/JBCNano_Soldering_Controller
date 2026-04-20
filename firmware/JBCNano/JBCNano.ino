@@ -190,15 +190,15 @@ int get_tc(eCartridgeT handle) {
   uint16_t avg = 0;
   uint16_t duty = OCR1A;
   OCR1A = 0;
-  delayMicroseconds(500);
-  /* Average over 1ms, default analogRead~100us */
-  for (int i=0; i<10; i++) {
+  delayMicroseconds(1000);
+  /* Average over default analogRead~100us * N */
+  for (int i=0; i<20; i++) {
     avg += analogRead(TC);
   }
   /* Restore HEATER_HI duty cycle */
   OCR1A = duty;
   /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
-  avg = avg / 10;
+  avg = avg / 20;
   switch (handle) {
     case C115:
       return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C115) ) + get_tmon();
@@ -564,7 +564,7 @@ void loop() {
     /* PID to determine what duty cycle to apply to HEATER_HI */
     pid.Compute();
     /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits */
-
+    OCR1A = ICR1/2;
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
