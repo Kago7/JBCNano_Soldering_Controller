@@ -65,7 +65,7 @@
 
 #define TIP_STAND_TEMP      150
 
-#define VDD_MINIMUM         10
+#define VDD_MINIMUM         9
 
 #define TFT_SPI_SPEED       8000000
 
