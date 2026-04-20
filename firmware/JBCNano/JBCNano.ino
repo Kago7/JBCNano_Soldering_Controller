@@ -74,7 +74,7 @@
 #define KI_C115 					2
 #define KD_C115 					0.3
 #define MAX_I_C115 				300
-#define MAX_POWER_C115    25
+#define MAX_POWER_C115    22
 #define RESISTANCE_C115   3.4f
 #define TC_UV_C_C115      .00000692f
 
@@ -491,12 +491,12 @@ void setup() {
   /* Initialize PID Controller */
   pid.SetMode(AUTOMATIC);
   pid.SetSampleTime(5);
-  pid.SetOutputLimits(0, 100);
+  pid.SetOutputLimits(0, 1);
   
   /* Allow for system settling time delay */
-  beep(0);
+  // beep(0);
   delay(200);
-  beep(1);
+  // beep(1);
 
   /* Enable ISR after setup*/
   interrupts();
@@ -529,50 +529,67 @@ void loop() {
   // }
 
   /* Loop variables */
-  set_pwr_heater_en    = !digitalRead(SET_PWR_HEATER_EN);
-  set_pwr_acc_en       = !digitalRead(SET_PWR_ACC_EN);
-  bool  hs1            = !digitalRead(HANDLE_SENSE_1_IN);
-  bool  hs2            = !digitalRead(HANDLE_SENSE_2_IN);
-  eCartridgeT handle   = detect_handle_type(hs1, hs2);
-  bool  stand_sense    = !digitalRead(STAND_SENSE_IN);
-  bool  tip_change     = !digitalRead(TIP_CHANGE_SENSE_IN);
-        actual_temp    = get_tc(handle);
-        set_temp       = get_set_temp(tip_change, stand_sense);
-  int   set_pwr_heater = (set_pwr_heater_en) ? get_pwr_heater() : 0;
-  int   set_pwm_acc    = (set_pwr_acc_en) ? get_pwm_acc() : 0;
-  float vmon           = get_vmon();
-  float tmon           = get_tmon();
-  float imon           = get_imon();
+  set_pwr_heater_en      = !digitalRead(SET_PWR_HEATER_EN);
+  set_pwr_acc_en         = !digitalRead(SET_PWR_ACC_EN);
+  bool  hs1              = !digitalRead(HANDLE_SENSE_1_IN);
+  bool  hs2              = !digitalRead(HANDLE_SENSE_2_IN);
+  eCartridgeT handle     = detect_handle_type(hs1, hs2);
+  bool  stand_sense      = !digitalRead(STAND_SENSE_IN);
+  bool  tip_change       = !digitalRead(TIP_CHANGE_SENSE_IN);
+        actual_temp      = get_tc(handle);
+        set_temp         = get_set_temp(tip_change, stand_sense);
+  int   set_pwr_heater   = (set_pwr_heater_en) ? get_pwr_heater() : 0;
+  int   set_pwm_acc      = (set_pwr_acc_en) ? get_pwm_acc() : 0;
+  float vmon             = get_vmon();
+  float tmon             = get_tmon();
+  float imon             = get_imon();
+  int heater_power_limit = set_pwr_heater;
+  double heater_hi_duty_limit = 0;
 
-  /* Configure PID constants based on handle */
+
+  /* Configure PID constants and minimum power limits based on handle */
   switch(handle) {
     case C115:
       pid.SetTunings(KP_C115, KI_C115, KD_C115);
+      heater_power_limit = min(heater_power_limit, MAX_POWER_C115);
+      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C115);
       break;
     case C210:
       pid.SetTunings(KP_C210, KI_C210, KD_C210);
+      heater_power_limit = min(heater_power_limit, MAX_POWER_C210);
+      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C210);
       break;
     case C245:
       pid.SetTunings(KP_C245, KI_C245, KD_C245);
+      heater_power_limit = min(heater_power_limit, MAX_POWER_C245);
+      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C245);
       break;
     default:
       pid.SetTunings(KP_C245, KI_C245, KD_C245);
+      heater_power_limit = min(heater_power_limit, MAX_POWER_C245);
+      heater_hi_duty_limit = 0;
   }
 
   /* Run the PID loop, and apply pwm if no uvlo */
   if (uvlo == 0) {
     /* Set HEATER_LO pwm% duty cycle */
     analogWrite(HEATER_LO, 255*set_pwm_acc/HEATER_MAX_PWR);
-    /* PID to determine what duty cycle to apply to HEATER_HI */
-    pid.Compute();
-    /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits */
-    OCR1A = ICR1/2;
+    /* Set HEATER_HI pwm% duty cycle */
+    if (set_pwr_heater > 0) {
+      /* Apply PID output limits based on max */
+      pid.SetOutputLimits(0, heater_hi_duty_limit);
+      /* PID to determine what duty cycle to apply to HEATER_HI */
+      pid.Compute();
+      /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
+      OCR1A = (ICR1 - 1)*pid_output;
+    } else {
+      OCR1A = 0;
+    }
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
     OCR1A = 0;
   }
-
 
   /* Update the TFT display */
   update_tft((int)actual_temp, (int)set_temp, set_pwr_heater, set_pwm_acc, vmon, tmon, imon, handle);
