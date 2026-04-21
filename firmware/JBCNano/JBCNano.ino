@@ -70,25 +70,25 @@
 #define TFT_SPI_SPEED       8000000
 
 /* CARTRIDGE DEFINES */
-#define KP_C115 					5
-#define KI_C115 					2
-#define KD_C115 					0.3
+#define KP_C115 					1
+#define KI_C115 					0
+#define KD_C115 					0
 #define MAX_I_C115 				300
 #define MAX_POWER_C115    22
 #define RESISTANCE_C115   3.4f
 #define TC_UV_C_C115      .00000692f
 
-#define KP_C210 					7
-#define KI_C210 					4
-#define KD_C210 					0.3
+#define KP_C210 					1
+#define KI_C210 					0
+#define KD_C210 					0
 #define MAX_I_C210 			  300
 #define MAX_POWER_C210    65
 #define RESISTANCE_C210   2.4f
 #define TC_UV_C_C210      .00000938f
 
-#define KP_C245 					8
-#define KI_C245 					2
-#define KD_C245 					0.5
+#define KP_C245 					1
+#define KI_C245 					0
+#define KD_C245 					0
 #define MAX_I_C245 				300
 #define MAX_POWER_C245    100
 #define RESISTANCE_C245   2.4f
@@ -117,7 +117,8 @@ PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT)
  */
 void set_pwr_heater_en_isr() {
   set_pwr_heater_en = 0;
-  OCR1A = 0;
+  digitalWrite(HEATER_HI, 0);
+  TCCR1A &= ~(1 << COM1A1);
   if (serial_enable) {
     Serial.println("isr fired");
   }
@@ -186,17 +187,17 @@ float get_imon() {
  * @return int 
  */
 int get_tc(eCartridgeT handle) {
-  /* Disable and save HEATER_HI duty cycle, wait 0.5ms for TC to stabilize */
+  /* Force HEATER_HI output to 0 and disconnect timer, wait for TC to stabilize */
   uint16_t avg = 0;
-  uint16_t duty = OCR1A;
-  OCR1A = 0;
-  delayMicroseconds(1000);
-  /* Average over default analogRead~100us * N */
+  digitalWrite(HEATER_HI, 0);
+  TCCR1A &= ~(1 << COM1A1);
+  delay(2);
+  /* Average over default analogRead~100us*N */
   for (int i=0; i<20; i++) {
     avg += analogRead(TC);
   }
-  /* Restore HEATER_HI duty cycle */
-  OCR1A = duty;
+  /* Restore HEATER_HI by reconnecting timer*/
+  TCCR1A |= (1 << COM1A1);
   /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
   avg = avg / 20;
   switch (handle) {
@@ -445,12 +446,12 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
 void setup() {
   /* Initialize peripherals, Serial only if UVLO */
   analogReference(DEFAULT);
-  if (get_vmon() < VDD_MINIMUM) {
-    Serial.begin(SERIAL_BAUD);
-    serial_enable = 1;
-  } else {
-    serial_enable = 0;
-  }
+  // if (get_vmon() < VDD_MINIMUM) {
+  //   Serial.begin(SERIAL_BAUD);
+  //   serial_enable = 1;
+  // } else {
+  //   serial_enable = 0;
+  // }
 
   /* Initialize inputs */
   pinMode(HANDLE_SENSE_1_IN  , INPUT_PULLUP);
@@ -480,7 +481,8 @@ void setup() {
   TCCR1B |= (1 << WGM12) | (1 << WGM13); /* Non-inverting mode on OC1A */
   TCCR1B |= (1 << CS10);                 /* Prescaler = 1 */
   ICR1    = (F_CPU/HEATER_FREQ) - 1;     /* Set output frequency */
-  OCR1A   = 0;                           /* Start with 0% Duty Cycle */
+  OCR1A   = 1;                           /* Start with ~0% Duty Cycle */
+  TCCR1A &= ~(1 << COM1A1);              /* Initially disconnected */
 
   /* Initialize TFT */
   tft.setSPISpeed(TFT_SPI_SPEED);
@@ -512,7 +514,8 @@ void loop() {
   if (get_vmon() < VDD_MINIMUM) {
     /* Disable pwm outputs to protect mosfets/gate driver */
     analogWrite(HEATER_LO, 0);
-    OCR1A = 0;
+    digitalWrite(HEATER_HI, 0);
+    TCCR1A &= ~(1 << COM1A1);
     uvlo = 1;
   } else {
     uvlo = 0;
@@ -524,6 +527,7 @@ void loop() {
   //   noInterrupts();
   //   digitalWrite(HEATER_LO, 0);
   //   digitalWrite(HEATER_HI, 0);
+  //   TCCR1A &= ~(1 << COM1A1);
   //   tone(BUZZER, BUZZER_FREQ_LO);
   //   while(1);
   // }
@@ -534,6 +538,7 @@ void loop() {
   bool  hs1              = !digitalRead(HANDLE_SENSE_1_IN);
   bool  hs2              = !digitalRead(HANDLE_SENSE_2_IN);
   eCartridgeT handle     = detect_handle_type(hs1, hs2);
+              handle     = C210;
   bool  stand_sense      = !digitalRead(STAND_SENSE_IN);
   bool  tip_change       = !digitalRead(TIP_CHANGE_SENSE_IN);
         actual_temp      = get_tc(handle);
@@ -580,15 +585,19 @@ void loop() {
       pid.SetOutputLimits(0, heater_hi_duty_limit);
       /* PID to determine what duty cycle to apply to HEATER_HI */
       pid.Compute();
+      /* Enable Timer to output duty cycle */
+      TCCR1A |= (1 << COM1A1);
       /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
       OCR1A = (ICR1 - 1)*pid_output;
     } else {
-      OCR1A = 0;
+      digitalWrite(HEATER_HI, 0);
+      TCCR1A &= ~(1 << COM1A1);
     }
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
-    OCR1A = 0;
+    digitalWrite(HEATER_HI, 0);
+    TCCR1A &= ~(1 << COM1A1);
   }
 
   /* Update the TFT display */
