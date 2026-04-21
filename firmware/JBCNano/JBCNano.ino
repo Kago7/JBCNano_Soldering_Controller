@@ -118,7 +118,6 @@ PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT)
 void set_pwr_heater_en_isr() {
   set_pwr_heater_en = 0;
   digitalWrite(HEATER_HI, 0);
-  TCCR1A &= ~(1 << COM1A1);
   if (serial_enable) {
     Serial.println("isr fired");
   }
@@ -190,14 +189,14 @@ int get_tc(eCartridgeT handle) {
   /* Force HEATER_HI output to 0 and disconnect timer, wait for TC to stabilize */
   uint16_t avg = 0;
   digitalWrite(HEATER_HI, 0);
-  TCCR1A &= ~(1 << COM1A1);
-  delay(2);
+  delay(3);
   /* Average over default analogRead~100us*N */
-  for (int i=0; i<20; i++) {
+  for (int i=0; i<10; i++) {
     avg += analogRead(TC);
   }
-  /* Restore HEATER_HI by reconnecting timer*/
-  TCCR1A |= (1 << COM1A1);
+  /* Restore HEATER_HI by reconnecting timer and restarting timer clock */
+  // TCCR1B |= (1 << CS10);
+  // TCCR1A |= (1 << COM1A1);
   /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
   avg = avg / 20;
   switch (handle) {
@@ -474,15 +473,21 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(SET_PWR_ACC_EN)   , set_pwr_acc_en_isr   , RISING);
 
   /* Initialize 20KHz PWM on Timer1 for Heater Gate Driver */
-  TCCR1A  = 0;                           /* Stop Timer1 */
-  TCCR1B  = 0;                           /* Stop Timer1 */
-  TCCR1A |= (1 << COM1A1);               /* Fast-PWM with ICR1 as TOP (Mode 14) */
-  TCCR1A |= (1 << WGM11);                /* Non-inverting mode on OC1A */
-  TCCR1B |= (1 << WGM12) | (1 << WGM13); /* Non-inverting mode on OC1A */
-  TCCR1B |= (1 << CS10);                 /* Prescaler = 1 */
-  ICR1    = (F_CPU/HEATER_FREQ) - 1;     /* Set output frequency */
-  OCR1A   = 1;                           /* Start with ~0% Duty Cycle */
-  TCCR1A &= ~(1 << COM1A1);              /* Initially disconnected */
+  // TCCR1A  = 0;                           /* Stop Timer1 */
+  // TCCR1B  = 0;                           /* Stop Timer1 */
+  // TCCR1A |= (1 << COM1A1);               /* Fast-PWM with ICR1 as TOP (Mode 14) */
+  // TCCR1A |= (1 << WGM11);                /* Non-inverting mode on OC1A */
+  // TCCR1B |= (1 << WGM12) | (1 << WGM13); /* Non-inverting mode on OC1A */
+  // TCCR1B |= (1 << CS10);                 /* Prescaler = 1 */
+  // ICR1    = (F_CPU/HEATER_FREQ) - 1;     /* Set output frequency */
+  // OCR1A   = 1;                           /* Start with ~0% Duty Cycle */
+  // TCCR1A &= ~(1 << COM1A1);              /* Initially disconnected */
+
+  /* Configure timer 1 prescaler */\
+  TCCR1B = (TCCR1B & 0b11111000) | 0x02; /* Prescaler = 8 */
+  digitalWrite(HEATER_HI, 0);            /* Initially disconnected */
+
+
 
   /* Initialize TFT */
   tft.setSPISpeed(TFT_SPI_SPEED);
@@ -515,7 +520,6 @@ void loop() {
     /* Disable pwm outputs to protect mosfets/gate driver */
     analogWrite(HEATER_LO, 0);
     digitalWrite(HEATER_HI, 0);
-    TCCR1A &= ~(1 << COM1A1);
     uvlo = 1;
   } else {
     uvlo = 0;
@@ -586,18 +590,17 @@ void loop() {
       /* PID to determine what duty cycle to apply to HEATER_HI */
       pid.Compute();
       /* Enable Timer to output duty cycle */
-      TCCR1A |= (1 << COM1A1);
-      /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
-      OCR1A = (ICR1 - 1)*pid_output;
+      // TCCR1A |= (1 << COM1A1);
+      // /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
+      // OCR1A = (ICR1 - 1)*pid_output;
+      analogWrite(HEATER_HI, 255*pid_output);
     } else {
       digitalWrite(HEATER_HI, 0);
-      TCCR1A &= ~(1 << COM1A1);
     }
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
     digitalWrite(HEATER_HI, 0);
-    TCCR1A &= ~(1 << COM1A1);
   }
 
   /* Update the TFT display */
