@@ -117,7 +117,7 @@ PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT)
  */
 void set_pwr_heater_en_isr() {
   set_pwr_heater_en = 0;
-  digitalWrite(HEATER_HI, 0);
+  
   if (serial_enable) {
     Serial.println("isr fired");
   }
@@ -186,19 +186,22 @@ float get_imon() {
  * @return int 
  */
 int get_tc(eCartridgeT handle) {
-  /* Force HEATER_HI output to 0 and disconnect timer, wait for TC to stabilize */
+  /* Force HEATER_HI output to 0, wait for TC to stabilize */
   uint16_t avg = 0;
-  digitalWrite(HEATER_HI, 0);
-  delay(3);
+  uint16_t duty = OCR1A;
+  OCR1A = ICR1;
+  delay(1);
   /* Average over default analogRead~100us*N */
   for (int i=0; i<10; i++) {
     avg += analogRead(TC);
+    delayMicroseconds(100);
   }
-  /* Restore HEATER_HI by reconnecting timer and restarting timer clock */
+  /* Restore HEATER_HI */
   // TCCR1B |= (1 << CS10);
   // TCCR1A |= (1 << COM1A1);
+  OCR1A = duty;
   /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
-  avg = avg / 20;
+  avg = avg / 10;
   switch (handle) {
     case C115:
       return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C115) ) + get_tmon();
@@ -343,7 +346,16 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
   tft.setTextColor(value_to_color(actual_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
   tft.print("Tip Temp: ");
   tft.setTextSize(2);
-  tft.print(actual_temp);
+  /* ensure 3 digits for temp to stop display ghosting */
+    if (actual_temp >= 100) {
+      tft.print(actual_temp);
+    } else if (actual_temp >= 10) {
+      tft.print("0");
+      tft.print(actual_temp);
+    } else {
+      tft.print("00");
+      tft.print(actual_temp);
+    }
   tft.println("C");
   tft.setTextSize(1);
 
@@ -355,7 +367,16 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
     tft.setTextColor(value_to_color(set_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
     tft.print("Set Temp: ");
     tft.setTextSize(2);
-    tft.print(set_temp);
+    /* ensure 3 digits for temp to stop display ghosting */
+    if (set_temp >= 100) {
+      tft.print(set_temp);
+    } else if (set_temp >= 10) {
+      tft.print("0");
+      tft.print(set_temp);
+    } else {
+      tft.print("00");
+      tft.print(set_temp);
+    }
     tft.println("C");
     tft.setTextSize(1);
     tft.println();
@@ -363,13 +384,31 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
     tft.setTextColor(ST77XX_WHITE, ST77XX_BLACK);
     tft.print("Set Pwr Tip: ");
     tft.setTextSize(2);
-    tft.print(set_pwr_heater);
+    /* ensure 3 digits for temp to stop display ghosting */
+    if (set_pwr_heater >= 100) {
+      tft.print(set_pwr_heater);
+    } else if (set_pwr_heater >= 10) {
+      tft.print("0");
+      tft.print(set_pwr_heater);
+    } else {
+      tft.print("00");
+      tft.print(set_pwr_heater);
+    }
     tft.println("W");
     tft.setTextSize(1);
 
     tft.print("Set Pwm Acc: ");
     tft.setTextSize(2);
-    tft.print(set_pwm_acc);
+    /* ensure 3 digits for temp to stop display ghosting */
+    if (set_pwm_acc >= 100) {
+      tft.print(set_pwm_acc);
+    } else if (set_pwm_acc >= 10) {
+      tft.print("0");
+      tft.print(set_pwm_acc);
+    } else {
+      tft.print("00");
+      tft.print(set_pwm_acc);
+    }
     tft.println("%");
     tft.setTextSize(1);
   }
@@ -386,7 +425,16 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
   tft.setTextColor(value_to_color(power, HEATER_MIN_PWR, HEATER_MAX_PWR), ST77XX_BLACK);
   tft.print("Total Power: ");
   tft.setTextSize(2);
-  tft.print(power);
+  /* ensure 3 digits for temp to stop display ghosting */
+  if (power >= 100) {
+    tft.print(power);
+  } else if (power >= 10) {
+    tft.print("0");
+    tft.print(power);
+  } else {
+    tft.print("00");
+    tft.print(power);
+  }
   tft.println("W");
   tft.setTextSize(1);
   tft.println();
@@ -443,6 +491,9 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
  * 
  */
 void setup() {
+  /* Desable ISR before setup */
+  noInterrupts();
+
   /* Initialize peripherals, Serial only if UVLO */
   analogReference(DEFAULT);
   // if (get_vmon() < VDD_MINIMUM) {
@@ -465,10 +516,9 @@ void setup() {
   pinMode(HEATER_LO, OUTPUT);
   digitalWrite(HEATER_LO, 0);
   pinMode(HEATER_HI, OUTPUT);
-  digitalWrite(HEATER_HI, 0);
+  
 
   /* Initialize interrupts */
-  noInterrupts();
   attachInterrupt(digitalPinToInterrupt(SET_PWR_HEATER_EN), set_pwr_heater_en_isr, RISING);
   attachInterrupt(digitalPinToInterrupt(SET_PWR_ACC_EN)   , set_pwr_acc_en_isr   , RISING);
 
@@ -483,10 +533,18 @@ void setup() {
   // OCR1A   = 1;                           /* Start with ~0% Duty Cycle */
   // TCCR1A &= ~(1 << COM1A1);              /* Initially disconnected */
 
-  /* Configure timer 1 prescaler */\
-  TCCR1B = (TCCR1B & 0b11111000) | 0x02; /* Prescaler = 8 */
-  digitalWrite(HEATER_HI, 0);            /* Initially disconnected */
-
+  TCCR1A = 
+    1 << COM1A1 |
+    1 << COM1A0 |
+    1 << WGM11;
+  TCCR1B = 
+    1 << WGM13 |
+    1 << WGM12 |
+    1 << CS10;
+  DDRB = 
+    1 << DDB1;
+  ICR1 = (F_CPU/HEATER_FREQ) - 1;
+  OCR1A = ICR1;
 
 
   /* Initialize TFT */
@@ -519,7 +577,7 @@ void loop() {
   if (get_vmon() < VDD_MINIMUM) {
     /* Disable pwm outputs to protect mosfets/gate driver */
     analogWrite(HEATER_LO, 0);
-    digitalWrite(HEATER_HI, 0);
+    
     uvlo = 1;
   } else {
     uvlo = 0;
@@ -530,7 +588,7 @@ void loop() {
   //   /* Disable pwm outputs to mosfets and play buzzer */
   //   noInterrupts();
   //   digitalWrite(HEATER_LO, 0);
-  //   digitalWrite(HEATER_HI, 0);
+  //   
   //   TCCR1A &= ~(1 << COM1A1);
   //   tone(BUZZER, BUZZER_FREQ_LO);
   //   while(1);
@@ -591,16 +649,15 @@ void loop() {
       pid.Compute();
       /* Enable Timer to output duty cycle */
       // TCCR1A |= (1 << COM1A1);
-      // /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
-      // OCR1A = (ICR1 - 1)*pid_output;
-      analogWrite(HEATER_HI, 255*pid_output);
+      /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
+      OCR1A = ICR1 - (ICR1 - 1)*pid_output;
     } else {
-      digitalWrite(HEATER_HI, 0);
+      
     }
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
-    digitalWrite(HEATER_HI, 0);
+    
   }
 
   /* Update the TFT display */
