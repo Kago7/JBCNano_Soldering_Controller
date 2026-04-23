@@ -16,6 +16,7 @@
 #include <Adafruit_ST7735.h>
 #include <SPI.h>
 #include "PID_v1.h"
+#include "EMA.h"
 
 /* PINOUT DEFINES */
 #define VMON                A0
@@ -54,6 +55,8 @@
 #define SERIAL_BAUD         115200
 
 #define TC_GAIN             226.67f
+#define TC_AMBIENT          23
+
 #define IMON_CONV_FACTOR    1.57f
 
 #define TMON_OFFSET         0
@@ -65,7 +68,8 @@
 
 #define TIP_STAND_TEMP      150
 
-#define VDD_MINIMUM         9
+#define VDD_MINIMUM         10
+#define VDD_USB             5
 
 #define TFT_SPI_SPEED       8000000
 
@@ -78,13 +82,13 @@
 #define RESISTANCE_C115   3.4f
 #define TC_UV_C_C115      .00000692f
 
-#define KP_C210 					1
+#define KP_C210 					2
 #define KI_C210 					0
 #define KD_C210 					0
 #define MAX_I_C210 			  300
 #define MAX_POWER_C210    65
 #define RESISTANCE_C210   2.4f
-#define TC_UV_C_C210      .00000938f
+#define TC_UV_C_C210      .00001032f
 
 #define KP_C245 					1
 #define KI_C245 					0
@@ -100,7 +104,6 @@ volatile bool set_pwr_acc_en    = 0;
 
 bool uvlo = 0;
 bool serial_enable = 0;
-char buf[10] = {0};
 
 typedef enum { C115, C210, C245, NONE } eCartridgeT;
 
@@ -108,7 +111,7 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_DC, TFT_RST);
 
 double actual_temp, pid_output, set_temp;
 PID pid(&actual_temp, &pid_output, &set_temp, KP_C245, KI_C245, KD_C245, DIRECT);
-
+static EMA<2> EMA_filter(0);
 /* ISRs */
 
 /**
@@ -190,31 +193,36 @@ int get_tc(eCartridgeT handle) {
   uint16_t avg = 0;
   uint16_t duty = OCR1A;
   OCR1A = ICR1;
-  delay(1);
+  delay(5);
   /* Average over default analogRead~100us*N */
   for (int i=0; i<10; i++) {
     avg += analogRead(TC);
-    delayMicroseconds(100);
+    delayMicroseconds(50);
   }
-  /* Restore HEATER_HI */
-  // TCCR1B |= (1 << CS10);
-  // TCCR1A |= (1 << COM1A1);
+  
   OCR1A = duty;
-  /* Compute temperature in degrees C + Cold Junction Compensation based on cartridge */
+  /* EMA Filter */
   avg = avg / 10;
+  avg = EMA_filter(avg);
+
+  /* Outlier filter and temperature conversion */
+  int new_temp;
+  static int old_temp;
   switch (handle) {
     case C115:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C115) ) + get_tmon();
+      new_temp = ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C115) ) + TC_AMBIENT;
       break;
     case C210:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C210) ) + get_tmon();
+      new_temp = ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C210) )*0.8 + TC_AMBIENT;
       break;
     case C245:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + get_tmon();
+      new_temp = ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + TC_AMBIENT;
       break;
     default:
-      return ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + get_tmon();
+      new_temp = ((ADC_REF_VOLTAGE * (avg/(float)ADC_NUM_COUNTS)) / (TC_GAIN * TC_UV_C_C245) ) + TC_AMBIENT;
   }
+
+  return new_temp;
 }
 
 /**
@@ -346,16 +354,18 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
   tft.setTextColor(value_to_color(actual_temp, HEATER_MIN_TEMP, HEATER_MAX_TEMP), ST77XX_BLACK);
   tft.print("Tip Temp: ");
   tft.setTextSize(2);
+  /* round to nearest multiple of 5 */
+  actual_temp = ( (actual_temp + 2) / 5 ) * 5;
   /* ensure 3 digits for temp to stop display ghosting */
-    if (actual_temp >= 100) {
-      tft.print(actual_temp);
-    } else if (actual_temp >= 10) {
-      tft.print("0");
-      tft.print(actual_temp);
-    } else {
-      tft.print("00");
-      tft.print(actual_temp);
-    }
+  if (actual_temp >= 100) {
+    tft.print(actual_temp);
+  } else if (actual_temp >= 10) {
+    tft.print("0");
+    tft.print(actual_temp);
+  } else {
+    tft.print("00");
+    tft.print(actual_temp);
+  }
   tft.println("C");
   tft.setTextSize(1);
 
@@ -491,17 +501,17 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
  * 
  */
 void setup() {
-  /* Desable ISR before setup */
+  /* Disable ISR before setup */
   noInterrupts();
 
   /* Initialize peripherals, Serial only if UVLO */
   analogReference(DEFAULT);
-  // if (get_vmon() < VDD_MINIMUM) {
-  //   Serial.begin(SERIAL_BAUD);
-  //   serial_enable = 1;
-  // } else {
-  //   serial_enable = 0;
-  // }
+  if (get_vmon() < VDD_USB) {
+    Serial.begin(SERIAL_BAUD);
+    serial_enable = 1;
+  } else {
+    serial_enable = 0;
+  }
 
   /* Initialize inputs */
   pinMode(HANDLE_SENSE_1_IN  , INPUT_PULLUP);
@@ -651,6 +661,7 @@ void loop() {
       // TCCR1A |= (1 << COM1A1);
       /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
       OCR1A = ICR1 - (ICR1 - 1)*pid_output;
+      // OCR1A = ICR1*0.95;
     } else {
       
     }
@@ -666,27 +677,28 @@ void loop() {
   /* DEBUG */
   if (serial_enable) {
     /* Print dynamic variables to serial monitor/plotter */
-    Serial.print("Actual Temp:");
-    Serial.print((int)actual_temp);
-    Serial.print(",");
-    Serial.print("Set Temp:");
+    Serial.print("Tip_Temp:");
+    Serial.println((int)actual_temp);
+    Serial.print("Tip_Temp:");
+    Serial.println((int)actual_temp);
+    Serial.print("Set_Temp:");
     Serial.println((int)set_temp);
-    Serial.print("Stand Sense:");
+    Serial.print("Stand_Sense:");
     Serial.println((int)stand_sense);
-    Serial.print("Tip Change:");
+    Serial.print("Tip_Change:");
     Serial.println((int)tip_change);
     Serial.print("HS1:");
     Serial.println((int)hs1);
     Serial.print("HS2:");
     Serial.println((int)hs2);
 
-    Serial.print("Set PWR:");
+    Serial.print("Set_PWR:");
     Serial.println((int)set_pwr_heater);
 
-    Serial.print("Set PWM:");
+    Serial.print("Set_PWM:");
     Serial.println((int)set_pwm_acc);
 
-    Serial.print("Ambient Temp:");
+    Serial.print("Ambient_Temp:");
     Serial.println(tmon);
 
     Serial.print("VMON:");
