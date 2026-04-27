@@ -587,22 +587,11 @@ void loop() {
   if (get_vmon() < VDD_MINIMUM) {
     /* Disable pwm outputs to protect mosfets/gate driver */
     analogWrite(HEATER_LO, 0);
-    
+    OCR1A = ICR1;
     uvlo = 1;
   } else {
     uvlo = 0;
   }
-
-  /* Overtemperature lockout for tip and tmon */
-  // if (get_tmon() > 45 || get_tc() > 475) {
-  //   /* Disable pwm outputs to mosfets and play buzzer */
-  //   noInterrupts();
-  //   digitalWrite(HEATER_LO, 0);
-  //   
-  //   TCCR1A &= ~(1 << COM1A1);
-  //   tone(BUZZER, BUZZER_FREQ_LO);
-  //   while(1);
-  // }
 
   /* Loop variables */
   set_pwr_heater_en      = !digitalRead(SET_PWR_HEATER_EN);
@@ -657,18 +646,23 @@ void loop() {
       pid.SetOutputLimits(0, heater_hi_duty_limit);
       /* PID to determine what duty cycle to apply to HEATER_HI */
       pid.Compute();
-      /* Enable Timer to output duty cycle */
-      // TCCR1A |= (1 << COM1A1);
       /* Apply PID and Limit HEATER_HI duty cycle based on handle power limits; (ICR1 - 1) to limit to max 99% due to bootstrap gate driver */
       OCR1A = ICR1 - (ICR1 - 1)*pid_output;
-      // OCR1A = ICR1*0.95;
     } else {
-      
+      OCR1A = ICR1;
     }
   } else {
     /* Disable pwm outputs to protect mosfet gate driver */
     analogWrite(HEATER_LO, 0);
-    
+    OCR1A = ICR1;
+  }
+
+  /* Overtemperature lockout for tip and tmon */
+  if (get_tmon() > 45 || get_tc(handle) > 400) {
+    /* Disable pwm outputs to mosfets and play buzzer */
+    analogWrite(HEATER_LO, 0);
+    OCR1A = ICR1;
+    tone(BUZZER, BUZZER_FREQ_LO, 100);
   }
 
   /* Update the TFT display */
