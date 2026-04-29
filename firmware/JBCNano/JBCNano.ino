@@ -321,10 +321,12 @@ uint16_t value_to_color(int val, int min, int max) {
  * 
  * @param tip_change 
  * @param stand_sense
+ * @param set_temp_en
+ * @return int
  */
-int get_set_temp(bool tip_change, bool stand_sense) {
+int get_set_temp(bool tip_change, bool stand_sense, bool set_temp_en) {
   /* Determine tip set temp based on stand inputs and potentiometer */
-  int temp = (!digitalRead(SET_TEMP_EN)) ? get_temp() : 0;
+  int temp = (set_temp_en) ? get_temp() : 0;
   if (stand_sense && (temp > TIP_STAND_TEMP) ) temp = TIP_STAND_TEMP;
   if (tip_change) temp = HEATER_MIN_TEMP;
   /* Check if 30min. runtime exceeded */
@@ -497,6 +499,24 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
 }
 
 /**
+ * @brief Acquire logic state of an input, multiple checks to prevent glitches
+ * 
+ * @param pin 
+ * @return bool
+ */
+bool get_input(int pin) {
+  bool status = 1;
+
+  /* Check active low logic inputs multiple times */
+  for (int i=0; i<5; i++) {
+    status &= !digitalRead(pin);
+    delayMicroseconds(100);
+  }
+
+  return status;
+}
+
+/**
  * @brief Initial setup for JBCNano
  * 
  */
@@ -569,9 +589,9 @@ void setup() {
   pid.SetOutputLimits(0, 1);
   
   /* Allow for system settling time delay */
-  // beep(0);
+  beep(0);
   delay(200);
-  // beep(1);
+  beep(1);
 
   /* Enable ISR after setup*/
   interrupts();
@@ -594,16 +614,17 @@ void loop() {
   }
 
   /* Loop variables */
-  set_pwr_heater_en      = !digitalRead(SET_PWR_HEATER_EN);
-  set_pwr_acc_en         = !digitalRead(SET_PWR_ACC_EN);
-  bool  hs1              = !digitalRead(HANDLE_SENSE_1_IN);
-  bool  hs2              = !digitalRead(HANDLE_SENSE_2_IN);
+  set_pwr_heater_en      = get_input(SET_PWR_HEATER_EN);
+  set_pwr_acc_en         = get_input(SET_PWR_ACC_EN);
+  bool set_temp_en       = get_input(SET_TEMP_EN);
+  bool  hs1              = get_input(HANDLE_SENSE_1_IN);
+  bool  hs2              = get_input(HANDLE_SENSE_2_IN);
   eCartridgeT handle     = detect_handle_type(hs1, hs2);
               handle     = C210;
-  bool  stand_sense      = !digitalRead(STAND_SENSE_IN);
-  bool  tip_change       = !digitalRead(TIP_CHANGE_SENSE_IN);
+  bool  stand_sense      = get_input(STAND_SENSE_IN);
+  bool  tip_change       = get_input(TIP_CHANGE_SENSE_IN);
         actual_temp      = get_tc(handle);
-        set_temp         = get_set_temp(tip_change, stand_sense);
+        set_temp         = get_set_temp(tip_change, stand_sense, set_temp_en);
   int   set_pwr_heater   = (set_pwr_heater_en) ? get_pwr_heater() : 0;
   int   set_pwm_acc      = (set_pwr_acc_en) ? get_pwm_acc() : 0;
   float vmon             = get_vmon();
