@@ -620,7 +620,6 @@ void loop() {
   bool  hs1              = get_input(HANDLE_SENSE_1_IN);
   bool  hs2              = get_input(HANDLE_SENSE_2_IN);
   eCartridgeT handle     = detect_handle_type(hs1, hs2);
-              handle     = C210;
   bool  stand_sense      = get_input(STAND_SENSE_IN);
   bool  tip_change       = get_input(TIP_CHANGE_SENSE_IN);
         actual_temp      = get_tc(handle);
@@ -630,7 +629,6 @@ void loop() {
   float vmon             = get_vmon();
   float tmon             = get_tmon();
   float imon             = get_imon();
-  int heater_power_limit = set_pwr_heater;
   double heater_hi_duty_limit = 0;
 
 
@@ -638,22 +636,21 @@ void loop() {
   switch(handle) {
     case C115:
       pid.SetTunings(KP_C115, KI_C115, KD_C115);
-      heater_power_limit = min(heater_power_limit, MAX_POWER_C115);
-      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C115);
+      set_pwr_heater = min(set_pwr_heater, MAX_POWER_C115);
+      heater_hi_duty_limit = set_pwr_heater/(float)(pow(vmon, 2.0)/RESISTANCE_C115);
       break;
     case C210:
       pid.SetTunings(KP_C210, KI_C210, KD_C210);
-      heater_power_limit = min(heater_power_limit, MAX_POWER_C210);
-      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C210);
+      set_pwr_heater = min(set_pwr_heater, MAX_POWER_C210);
+      heater_hi_duty_limit = set_pwr_heater/(float)(pow(vmon, 2.0)/RESISTANCE_C210);
       break;
     case C245:
       pid.SetTunings(KP_C245, KI_C245, KD_C245);
-      heater_power_limit = min(heater_power_limit, MAX_POWER_C245);
-      heater_hi_duty_limit = heater_power_limit/(float)(pow(vmon, 2.0)/RESISTANCE_C245);
+      set_pwr_heater = min(set_pwr_heater, MAX_POWER_C245);
+      heater_hi_duty_limit = set_pwr_heater/(float)(pow(vmon, 2.0)/RESISTANCE_C245);
       break;
     default:
       pid.SetTunings(KP_C245, KI_C245, KD_C245);
-      heater_power_limit = min(heater_power_limit, MAX_POWER_C245);
       heater_hi_duty_limit = 0;
   }
 
