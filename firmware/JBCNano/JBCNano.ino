@@ -506,13 +506,16 @@ void update_tft(int actual_temp, int set_temp, int set_pwr_heater, int set_pwm_a
  */
 bool get_input(int pin) {
   bool status = 1;
-
+  /* Disable PWM to reduce noise */
+  uint16_t duty = OCR1A;
+  OCR1A = ICR1;
   /* Check active low logic inputs multiple times */
-  for (int i=0; i<5; i++) {
+  for (int i=0; i<3; i++) {
     status &= !digitalRead(pin);
     delayMicroseconds(100);
   }
-
+  /* Restore PWM */
+  OCR1A = duty;
   return status;
 }
 
