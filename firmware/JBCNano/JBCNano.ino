@@ -328,7 +328,7 @@ int get_set_temp(bool tip_change, bool stand_sense, bool set_temp_en) {
   /* Determine tip set temp based on stand inputs and potentiometer */
   int temp = (set_temp_en) ? get_temp() : 0;
   if (stand_sense && (temp > TIP_STAND_TEMP) ) temp = TIP_STAND_TEMP;
-  if (tip_change) temp = HEATER_MIN_TEMP;
+  if (tip_change) temp = 0;
   /* Check if 30min. runtime exceeded */
   if ( (millis() > 1800000) ) {
     return HEATER_MIN_TEMP;
